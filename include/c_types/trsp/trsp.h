@@ -32,11 +32,12 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 /* for int64_t */
 #ifdef __cplusplus
 #   include <cstdint>
-typedef int64_t int64;
-typedef double float8;
 #else
 #   include <stdint.h>
 #endif
+
+typedef int64_t int64;
+typedef double float8;
 
 struct restrict_t {
     int target_id;

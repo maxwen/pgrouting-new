@@ -25,7 +25,12 @@
  ********************************************************************PGR-GNU*/
 
 #include <stdio.h>
-#include "c_common/postgres_connection.h"
+#include <stddef.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdlib.h>
+#include <limits.h>
+
 #include "c_common/debug_macro.h"
 
 #include "c_types/trsp/trsp.h"
@@ -37,29 +42,23 @@
 
 #include "trsp/trsp_core.h"
 
-#define pg_fprintf fprintf
-
 typedef struct restrict_t restrict_t;
 typedef struct Edge_t Edge_t;
 typedef struct path_element_tt path_element_tt;
 
+static Edge_t *edges = NULL;
+static restrict_t *restricts = NULL;
+static size_t total_tuples = 0;
+static size_t restrict_rows = 0;
 
-int compute_trsp(
-    char* db_file,
-    char* sql,
-    char* restrict_sql,
-    int dovertex,
-    int64_t start_id,
-    double start_pos,
-    int64_t end_id,
-    double end_pos,
-    path_element_tt **path,
-    size_t *path_count) {
+void reset_data() {
+    fprintf(stderr, "reset_data\n");
+    edges = NULL;
+    restricts = NULL;
+}
 
-    bool directed = true;
-    bool has_reverse_cost = true;
+static int load_data(char* db_file, char* sql, char* restrict_sql) {
     sqlite3 *edgedb;
-    char *zErrMsg = 0;
 
     int rc = sqlite3_open(db_file, &edgedb);
     if (rc) {
@@ -67,11 +66,9 @@ int compute_trsp(
         return -1;
     }
 
-    Edge_t *edges = NULL;
-    size_t total_tuples = 0;
-
     if (sql == NULL) {
         fprintf(stderr, "Sql for edges is null\n");
+        return -1;
     } else {
         sqlite3_stmt *stmt;
         const char* count_sql = "SELECT COUNT(*) FROM edgeTable";
@@ -116,6 +113,88 @@ int compute_trsp(
         sqlite3_finalize(stmt);
     }
 
+    fprintf(stderr, "Fetching restriction tuples\n");
+
+    if (restrict_sql == NULL) {
+        fprintf(stderr, "Sql for restrictions is null.\n");
+        return -1;
+    } else {
+        sqlite3_stmt *stmt;
+        const char* count_sql = "SELECT COUNT(*) FROM restrictionTable";
+
+        if (sqlite3_prepare(edgedb,count_sql,strlen(count_sql),&stmt,0)!=SQLITE_OK){
+            fprintf(stderr, "SQL-Fehler:%s\n", sqlite3_errmsg(edgedb));
+            return -1;
+        }
+
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            restrict_rows = (size_t) sqlite3_column_int(stmt,0);
+        }
+        fprintf(stderr, "Total %ld restriction tuples\n", restrict_rows);
+
+        restricts = calloc((size_t)restrict_rows, sizeof(restrict_t));
+
+        if (restricts == NULL) {
+            sqlite3_close(edgedb);
+            fprintf(stderr, "Out of memory\n");
+            return -1;
+        }
+
+        sqlite3_finalize(stmt);
+
+        if (sqlite3_prepare(edgedb,restrict_sql,strlen(restrict_sql),&stmt,0)!=SQLITE_OK){
+            fprintf(stderr, "SQL-Fehler:%s\n", sqlite3_errmsg(edgedb));
+            return -1;
+        }
+
+        int num = 0;
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
+            restrict_t* rest = &restricts[num];
+            rest->target_id = sqlite3_column_int(stmt,0);
+            rest->to_cost = sqlite3_column_double(stmt,1);
+            const char* viaPath = sqlite3_column_text(stmt,2);
+
+            int ci = 0;
+            char* pch = (char *)strtok((char *)viaPath, " ,");
+
+            while (pch != NULL && ci < MAX_RULE_LENGTH) {
+                rest->via[ci] = atoi(pch);
+                ci++;
+                pch = (char *)strtok(NULL, " ,");
+            }
+            num++;
+        }
+        sqlite3_finalize(stmt);
+    }
+    sqlite3_close(edgedb);
+
+    return 0;
+}
+
+path_element_tt* compute_trsp(
+    char* db_file,
+    char* sql,
+    char* restrict_sql,
+    int dovertex,
+    int64_t start_id,
+    double start_pos,
+    int64_t end_id,
+    double end_pos,
+    path_element_tt **path,
+    size_t *path_count) {
+
+    bool directed = true;
+    bool has_reverse_cost = true;
+    char *err_msg;
+    int ret = -1;
+
+    if (restricts == NULL && edges == NULL) {
+        ret = load_data(db_file, sql, restrict_sql);
+        if (ret) {
+            fprintf(stderr, "Failed to load data\n");
+            return NULL;
+        }
+    }
     // defining min and max vertex id
     int64_t v_max_id = 0;
     int64_t v_min_id = INT_MAX;
@@ -165,76 +244,17 @@ int compute_trsp(
 
     if (s_count == 0) {
         fprintf(stderr, "Start id was not found.\n");
-        return -1;
+        return NULL;
     }
 
     if (t_count == 0) {
         fprintf(stderr, "Target id was not found.\n");
-        return -1;
+        return NULL;
     }
 
     if (dovertex) {
         start_id -= v_min_id;
         end_id   -= v_min_id;
-    }
-
-    fprintf(stderr, "Fetching restriction tuples\n");
-    restrict_t *restricts = NULL;
-    size_t restrict_rows = 0;
-
-    char *err_msg;
-    int ret = -1;
-
-    if (restrict_sql == NULL) {
-        fprintf(stderr, "Sql for restrictions is null.\n");
-    } else {
-        sqlite3_stmt *stmt;
-        const char* count_sql = "SELECT COUNT(*) FROM restrictionTable";
-
-        if (sqlite3_prepare(edgedb,count_sql,strlen(count_sql),&stmt,0)!=SQLITE_OK){
-            fprintf(stderr, "SQL-Fehler:%s\n", sqlite3_errmsg(edgedb));
-            return -1;
-        }
-
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            restrict_rows = (size_t) sqlite3_column_int(stmt,0);
-        }
-        fprintf(stderr, "Total %ld restriction tuples\n", restrict_rows);
-
-        restricts = calloc((size_t)restrict_rows, sizeof(restrict_t));
-
-        if (restricts == NULL) {
-            sqlite3_close(edgedb);
-            fprintf(stderr, "Out of memory\n");
-            return -1;
-        }
-
-        sqlite3_finalize(stmt);
-
-        if (sqlite3_prepare(edgedb,restrict_sql,strlen(restrict_sql),&stmt,0)!=SQLITE_OK){
-            fprintf(stderr, "SQL-Fehler:%s\n", sqlite3_errmsg(edgedb));
-            return -1;
-        }
-
-        int num = 0;
-        while (sqlite3_step(stmt) == SQLITE_ROW) {
-            restrict_t* rest = &restricts[num];
-            rest->target_id = sqlite3_column_int(stmt,0);
-            rest->to_cost = sqlite3_column_double(stmt,1);
-            const char* viaPath = sqlite3_column_text(stmt,2);
-
-            int ci = 0;
-            char* pch = (char *)strtok((char *)viaPath, " ,");
-
-            while (pch != NULL && ci < MAX_RULE_LENGTH) {
-                rest->via[ci] = atoi(pch);
-                ci++;
-                pch = (char *)strtok(NULL, " ,");
-            }
-            fprintf(stderr,"\n");
-            num++;
-        }
-        sqlite3_finalize(stmt);
     }
 
     fprintf(stderr, "Calling trsp_edge_wrapper\n");
@@ -255,15 +275,13 @@ int compute_trsp(
             if (z || (*path)[z].vertex_id != -1)
                 (*path)[z].vertex_id += v_min_id;
         }
-        fprintf(stderr, "path_count = %ld\n", *path_count);
-        fprintf(stderr, "path = ");
+        /*fprintf(stderr, "path_count = %ld\n", *path_count);
+        fprintf(stderr, "(");
         for (z = 0; z < *path_count; z++) {
-            fprintf(stderr, "%d,",(*path)[z].edge_id);
+            fprintf(stderr, "%d,", (*path)[z].edge_id);
         }
-        fprintf(stderr, "\n");
+        fprintf(stderr, ")\n");*/
     }
 
-    sqlite3_close(edgedb);
-
-    return 0;
+    return *path;
 }
