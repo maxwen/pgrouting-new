@@ -34,6 +34,7 @@ else(POSTGRESQL_INCLUDE_DIR AND POSTGRESQL_LIBRARIES AND POSTGRESQL_EXECUTABLE)
         find_program(POSTGRESQL_PG_CONFIG NAMES pg_config
             PATHS
             /usr/lib/postgresql/*/bin/
+            /usr/pgsql-14/bin/
             )
     endif(NOT "${POSTGRESQL_BIN}" STREQUAL "")
 
@@ -55,6 +56,7 @@ else(POSTGRESQL_INCLUDE_DIR AND POSTGRESQL_LIBRARIES AND POSTGRESQL_EXECUTABLE)
     find_program(POSTGRESQL_EXECUTABLE NAMES postgres
         PATHS
         /usr/lib/postgresql/*/bin/
+        /usr/pgsql-14/bin/
         )
 #    # more elegant, equivalent way if we want to keep both of above:
 #    find_program(POSTGRESQL_EXECUTABLE NAMES postgres
@@ -87,6 +89,7 @@ else(POSTGRESQL_INCLUDE_DIR AND POSTGRESQL_LIBRARIES AND POSTGRESQL_EXECUTABLE)
         HINTS
         ${T_POSTGRESQL_INCLUDE_DIR}
         PATHS
+        /usr/pgsql-14/include/server
         /usr/include/server
         /usr/include/pgsql/server
         /usr/local/include/pgsql/server

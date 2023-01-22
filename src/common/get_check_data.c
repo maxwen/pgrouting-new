@@ -411,7 +411,7 @@ pgr_SPI_getFloat8(HeapTuple *tuple, TupleDesc *tupdesc, Column_info_t info) {
             break;
         case NUMERICOID:
              /* Note: out-of-range values will be clamped to +-HUGE_VAL */
-             value = (double) DatumGetFloat8(DirectFunctionCall1(numeric_float8_no_overflow, binval));
+             //value = (double) DatumGetFloat8(DirectFunctionCall1(numeric_float8_no_overflow, binval));
              break;
         default:
             elog(ERROR,
