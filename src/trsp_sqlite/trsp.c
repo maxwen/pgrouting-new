@@ -53,8 +53,14 @@ static size_t restrict_rows = 0;
 
 void reset_data() {
     fprintf(stderr, "reset_data\n");
-    edges = NULL;
-    restricts = NULL;
+    if (edges != NULL) {
+        free(edges);
+        edges = NULL;
+    }
+    if (restricts != NULL) {
+        free(restricts);
+        restricts = NULL;
+    }
 }
 
 static int load_data(char* db_file, char* sql, char* restrict_sql) {
