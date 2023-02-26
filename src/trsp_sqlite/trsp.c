@@ -111,9 +111,9 @@ static int load_data(char* db_file, char* sql, char* restrict_sql) {
             edge->id = sqlite3_column_int(stmt,0);
             edge->source = sqlite3_column_int(stmt,1);
             edge->target = sqlite3_column_int(stmt,2);
-            edge->cost = sqlite3_column_double(stmt,3);
-            edge->reverse_cost = sqlite3_column_double(stmt,4);
-
+            edge->cost_base = sqlite3_column_double(stmt,3);
+            edge->reverse_cost_base = sqlite3_column_double(stmt,4);
+            edge->type_factor = sqlite3_column_int(stmt,5);
             num++;
         }
         sqlite3_finalize(stmt);
@@ -177,6 +177,21 @@ static int load_data(char* db_file, char* sql, char* restrict_sql) {
     return 0;
 }
 
+static int apply_type_factor(double* street_type_cost_factor) {
+    size_t z;
+    for (z = 0; z < total_tuples; z++) {
+        double cost_base = edges[z].cost_base;
+        double reverse_cost_base = edges[z].reverse_cost_base;
+        edges[z].cost = cost_base * street_type_cost_factor[edges[z].type_factor];
+
+        if (cost_base == reverse_cost_base) {
+            edges[z].reverse_cost = edges[z].cost;
+        } else {
+            edges[z].reverse_cost = reverse_cost_base;
+        }
+    }
+}
+
 path_element_tt* compute_trsp(
     char* db_file,
     char* sql,
@@ -187,7 +202,8 @@ path_element_tt* compute_trsp(
     int64_t end_id,
     double end_pos,
     path_element_tt **path,
-    size_t *path_count) {
+    size_t *path_count,
+    double* street_type_cost_factor) {
 
     bool directed = true;
     bool has_reverse_cost = true;
@@ -201,6 +217,8 @@ path_element_tt* compute_trsp(
             return NULL;
         }
     }
+    apply_type_factor(street_type_cost_factor);
+
     // defining min and max vertex id
     int64_t v_max_id = 0;
     int64_t v_min_id = INT_MAX;

@@ -40,6 +40,9 @@ struct Edge_t{
     int64_t target;
     double cost;
     double reverse_cost;
+    double cost_base;
+    double reverse_cost_base;
+    int type_factor;
 };
 
 #endif  // INCLUDE_C_TYPES_EDGE_T_H_
